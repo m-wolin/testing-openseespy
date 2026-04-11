@@ -1,0 +1,1 @@
+Educational purpose - testing and playing with openseespy.
