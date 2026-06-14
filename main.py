@@ -1,92 +1,172 @@
 import openseespy.opensees as ops
+import matplotlib.pyplot as plt
+import numpy as np
 
 # -------------------------------------------------------------
 # 1. Initialization and Model Builder
 # -------------------------------------------------------------
 ops.wipe()
-ops.model('basic', '-ndm', 2, '-ndf', 3)  # 2D model, 3 DOFs per node (ux, uy, rz)
+ops.model("basic", "-ndm", 2, "-ndf", 3)
 
 # -------------------------------------------------------------
 # 2. Nodes Geometry
 # -------------------------------------------------------------
-# Cantilever total length = 10m, split into 2x5m segments.
-# We create two nodes at the 5m mark to insert the zero-length rotational spring.
-
-ops.node(1, 0.0, 0.0)   # Fixed Base
-ops.node(2, 5.0, 0.0)   # End of Segment 1
-ops.node(3, 5.0, 0.0)   # Start of Segment 2 (Coincident with Node 2)
-ops.node(4, 10.0, 0.0)  # Free Tip
+ops.node(1, 0.0, 0.0)
+ops.node(2, 5.0, 0.0)
+ops.node(3, 5.0, 0.0)
+ops.node(4, 10.0, 0.0)
 
 # -------------------------------------------------------------
 # 3. Boundary Conditions & Multipoint Constraints
 # -------------------------------------------------------------
-# Fix Node 1 (Cantilever Base)
 ops.fix(1, 1, 1, 1)
-
-# Connect Node 2 and Node 3: 
-# They must share UX and UY (rigidly fixed to each other), but RZ is free to rotate independently
-# except for the spring constraint we will add.
-ops.equalDOF(2, 3, 1, 2)  # Constrain UX (1) and UY (2) between node 2 and 3
+ops.equalDOF(2, 3, 1, 2)
 
 # -------------------------------------------------------------
-# 4. Materials and Section Properties (Elastic Beam Column)
+# 4. Materials and Section Properties
 # -------------------------------------------------------------
-# Cross-section properties for the beam segments
-E = 2.1e11    # Elastic Modulus (Pa)
-A = 116 * 1e-4      # Cross-sectional Area (m^2)
-I = 4.82 * 1e-4    # Moment of Inertia (m^4)
+E = 2.1e11
+A = 116 * 1e-4
+I = 4.82 * 1e-4
 
-# Define an elastic material for our rotational spring
 mat_tag = 1
-k_rot = 1.0e6  # Rotational spring stiffness (Nm/rad)
-ops.uniaxialMaterial('Elastic', mat_tag, k_rot)
+k_rot = 1.0e6
+ops.uniaxialMaterial("Elastic", mat_tag, k_rot)
 
-# Linear Coordinate Transformation for the beams
 transf_tag = 1
-ops.geomTransf('Linear', transf_tag)
+ops.geomTransf("Linear", transf_tag)
 
 # -------------------------------------------------------------
 # 5. Elements
 # -------------------------------------------------------------
-# Beam Segment 1 (0m to 5m)
-ops.element('elasticBeamColumn', 1, 1, 2, A, E, I, transf_tag)
-
-# Rotational Hinge (Spring) at 5m connecting Node 2 and Node 3
-# It acts only on the RZ DOF (direction 3 in OpenSees 2D)
-ops.element('zeroLength', 2, 2, 3, '-mat', mat_tag, '-dir', 3)
-
-# Beam Segment 2 (5m to 10m)
-ops.element('elasticBeamColumn', 3, 3, 4, A, E, I, transf_tag)
+ops.element("elasticBeamColumn", 1, 1, 2, A, E, I, transf_tag)
+ops.element("zeroLength", 2, 2, 3, "-mat", mat_tag, "-dir", 3)
+ops.element("elasticBeamColumn", 3, 3, 4, A, E, I, transf_tag)
 
 # -------------------------------------------------------------
 # 6. Loads & Analysis Setup
 # -------------------------------------------------------------
-# Create a Plain load pattern with a Linear time series
-ops.timeSeries('Linear', 1)
-ops.pattern('Plain', 1, 1)
-
-# Apply a downward point load of 10 kN at the tip (Node 4, DOF 2)
+ops.timeSeries("Linear", 1)
+ops.pattern("Plain", 1, 1)
 ops.load(4, 0.0, -1000.0, 0.0)
 
-# Build the analysis solver
-ops.system('BandSPD')
-ops.numberer('RCM')
-ops.constraints('Transformation')
-ops.integrator('LoadControl', 1.0)
-ops.algorithm('Linear')
-ops.analysis('Static')
+ops.system("BandSPD")
+ops.numberer("RCM")
+ops.constraints("Transformation")
+ops.integrator("LoadControl", 1.0)
+ops.algorithm("Linear")
+ops.analysis("Static")
 
 # -------------------------------------------------------------
-# 7. Run Analysis and Print Results
+# 7. Run Analysis
 # -------------------------------------------------------------
 analyze_status = ops.analyze(1)
 
 if analyze_status == 0:
     print("Analysis successfully completed!\n")
-    print(f"Node 1 (Base) Displacement:   {ops.nodeDisp(1)}")
-    print(f"Node 2 (Hinge Left) Rotation: {ops.nodeDisp(2)[2]:.6f} rad")
-    print(f"Node 3 (Hinge Right) Rotation:{ops.nodeDisp(3)[2]:.6f} rad")
-    print(f"Node 4 (Tip) Deflection:      {ops.nodeDisp(4)[1]:.6f} m")
+
+    d1 = ops.nodeDisp(1)
+    d2 = ops.nodeDisp(2)
+    d3 = ops.nodeDisp(3)
+    d4 = ops.nodeDisp(4)
+
+    print(f"Node 1 (Base) Displacement:   {d1}")
+    print(f"Node 2 (Hinge Left) Rotation: {d2[2]:.6f} rad")
+    print(f"Node 3 (Hinge Right) Rotation:{d3[2]:.6f} rad")
+    print(f"Node 4 (Tip) Deflection:      {d4[1]:.6f} m")
+
+    # -------------------------------------------------------------
+    # 8. Plot
+    # -------------------------------------------------------------
+    # --- tweak these two values ---
+    defl_scale = 10  # multiplier applied to displacements for visibility
+    y_margin = 1  # fixed y-axis half-range in scaled metres (controls figure height)
+    # ------------------------------
+
+    x_orig = [0.0, 5.0, 10.0]
+    y_orig = [0.0, 0.0, 0.0]
+
+    x_mid = 5.0 + d2[0] * defl_scale
+    y_mid = 0.0 + d2[1] * defl_scale
+
+    x_def = [0.0 + d1[0] * defl_scale, 10.0 + d4[0] * defl_scale]
+    y_def = [0.0 + d1[1] * defl_scale, 0.0 + d4[1] * defl_scale]
+
+    node_x_def = [
+        0.0 + d1[0] * defl_scale,
+        5.0 + d2[0] * defl_scale,
+        5.0 + d3[0] * defl_scale,
+        10.0 + d4[0] * defl_scale,
+    ]
+    node_y_def = [
+        0.0 + d1[1] * defl_scale,
+        0.0 + d2[1] * defl_scale,
+        0.0 + d3[1] * defl_scale,
+        0.0 + d4[1] * defl_scale,
+    ]
+
+    fig, ax = plt.subplots(figsize=(9, 4))
+
+    # Undeformed beam
+    ax.plot(x_orig, y_orig, "k--", linewidth=1, label="Undeformed")
+
+    # Deformed beam
+    ax.plot(
+        [x_def[0], x_mid, x_def[1]],
+        [y_def[0], y_mid, y_def[1]],
+        "b-",
+        linewidth=2,
+        label=f"Deformed (x{defl_scale})",
+    )
+
+    ax.plot(node_x_def, node_y_def, "bo", markersize=6)
+    ax.plot(
+        x_mid,
+        y_mid,
+        "o",
+        color="orange",
+        markersize=9,
+        label="Spring (hinge)",
+        zorder=5,
+    )
+    ax.plot(0.0, 0.0, "ks", markersize=8, label="Fixed support")
+
+    # Load arrow at tip
+    arrow_len = y_margin * 0.4
+    ax.annotate(
+        "",
+        xy=(x_def[1], y_def[1]),
+        xytext=(x_def[1], y_def[1] + arrow_len),
+        arrowprops=dict(arrowstyle="->", color="red", lw=1.5),
+    )
+    ax.text(
+        x_def[1] + 0.15, y_def[1] + arrow_len * 0.5, "10 kN", color="red", fontsize=9
+    )
+
+    # Tip deflection annotation
+    ax.annotate(
+        f"tip: {d4[1] * 1000:.2f} mm",
+        xy=(x_def[1], y_def[1]),
+        xytext=(x_def[1] - 2.0, y_def[1] - y_margin * 0.4),
+        fontsize=8,
+        color="blue",
+        arrowprops=dict(arrowstyle="->", color="blue", lw=0.8),
+    )
+
+    # Fixed y limits so figure does not collapse when defl_scale is small
+    ax.set_ylim(-y_margin, y_margin)
+
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel(f"y (m, disp x{defl_scale})")
+    ax.set_title("Cantilever beam with rotational spring - deformed shape")
+    ax.legend(fontsize=8)
+    ax.grid(True, linewidth=0.4, alpha=0.5)
+
+    plt.tight_layout()
+    plt.savefig("cantilever_spring.png", dpi=150)
+    plt.show()
+    print("Plot saved to cantilever_spring.png")
+
 else:
     print("Analysis failed.")
 
