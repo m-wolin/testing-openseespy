@@ -34,7 +34,7 @@ ops.equalDOF(2, 3, 1, 2)  # Constrain UX (1) and UY (2) between node 2 and 3
 # Cross-section properties for the beam segments
 E = 2.1e11    # Elastic Modulus (Pa)
 A = 116 * 1e-4      # Cross-sectional Area (m^2)
-I = 48_200 * 1e-8    # Moment of Inertia (m^4)
+I = 4.82 * 1e-4    # Moment of Inertia (m^4)
 
 # Define an elastic material for our rotational spring
 mat_tag = 1
